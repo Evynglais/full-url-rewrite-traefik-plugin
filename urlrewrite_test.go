@@ -81,12 +81,14 @@ func TestServeHTTPMapsRewriteErrorToInternalServerError(t *testing.T) {
 
 func TestURLRewrite(t *testing.T) {
 	cases := []struct {
-		name        string
-		originalUrl string
-		regex       string
-		replacement string
-		expectedUrl string
-		expectedErr string
+		name                   string
+		originalUrl            string
+		headers                map[string]string
+		sourceStringFromHeader string
+		regex                  string
+		replacement            string
+		expectedUrl            string
+		expectedErr            string
 	}{
 		{
 			name:        "Simple string replacement",
@@ -136,14 +138,44 @@ func TestURLRewrite(t *testing.T) {
 			expectedUrl: "//cust-company1.example.com/company1/hello",
 			expectedErr: "",
 		},
+		{
+			name:        "Regex replacement: take the source string from header",
+			originalUrl: "//example.com/hello?param=234&another=123",
+			headers: map[string]string{
+				"Host":            "example.com",
+				"X-Original-Host": "another-company.com",
+			},
+			sourceStringFromHeader: "X-Original-Host",
+			regex:                  "^(.+)\\.com$",
+			replacement:            "//example.com/$1",
+			expectedUrl:            "//example.com/another-company",
+			expectedErr:            "",
+		},
+		{
+			name:        "Regex replacement: should not rewrite URL if no sources matched the regex",
+			originalUrl: "//example.com/hello?param=234&another=123",
+			headers: map[string]string{
+				"Host":            "example.com",
+				"X-Original-Host": "another-company.com",
+			},
+			sourceStringFromHeader: "X-Original-Host",
+			regex:                  "^(.+)\\.nl$",
+			replacement:            "//example.com/$1",
+			expectedUrl:            "//example.com/hello?param=234&another=123",
+			expectedErr:            "",
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req, _ := http.NewRequest("GET", tc.originalUrl, nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
 			rule := &rewriteRule{
-				regexp:      regexp.MustCompile(tc.regex),
-				replacement: tc.replacement,
+				sourceStringFromHeader: tc.sourceStringFromHeader,
+				regexp:                 regexp.MustCompile(tc.regex),
+				replacement:            tc.replacement,
 			}
 
 			newReq, err := rewriteRequestUrl(req, rule)
